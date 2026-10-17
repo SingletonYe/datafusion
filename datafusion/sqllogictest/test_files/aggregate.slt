@@ -10327,3 +10327,14 @@ DROP TABLE a;
 
 statement ok
 DROP TABLE b;
+
+# nth_value indices are 1-based, so 0 must be reported as an error rather than
+# tripping an internal assertion that asks the user to file a bug report.
+statement ok
+CREATE TABLE nth_value_zero_index (a int) AS VALUES (1), (2);
+
+query error DataFusion error: Execution error: nth_value index must not be 0; indices are 1-based and negative values count from the end
+SELECT nth_value(a, 0) FROM nth_value_zero_index;
+
+statement ok
+DROP TABLE nth_value_zero_index;

@@ -27,9 +27,7 @@ use arrow::array::{ArrayRef, AsArray, StructArray, new_empty_array};
 use arrow::datatypes::{DataType, Field, FieldRef, Fields};
 
 use datafusion_common::utils::{SingleRowListArrayBuilder, get_row_at_idx};
-use datafusion_common::{
-    Result, ScalarValue, assert_or_internal_err, exec_err, not_impl_err,
-};
+use datafusion_common::{Result, ScalarValue, exec_err, not_impl_err};
 use datafusion_expr::DistinctHandling;
 use datafusion_expr::function::{AccumulatorArgs, StateFieldsArgs};
 use datafusion_expr::utils::format_state_name;
@@ -148,6 +146,16 @@ impl AggregateUDFImpl for NthValueAgg {
             }
         };
 
+        // The index is 1-based and negative values count back from the end, so 0 is
+        // never a valid index. Report that as a user error rather than letting the
+        // accumulators trip an internal assertion, which told the user to file a bug
+        // report for their own typo.
+        if n == 0 {
+            return exec_err!(
+                "nth_value index must not be 0; indices are 1-based and negative values count from the end"
+            );
+        }
+
         let Some(ordering) = LexOrdering::new(acc_args.order_bys.to_vec()) else {
             return TrivialNthValueAccumulator::try_new(
                 n,
@@ -213,11 +221,6 @@ impl TrivialNthValueAccumulator {
     /// Create a new order-insensitive NTH_VALUE accumulator based on the given
     /// item data type.
     pub fn try_new(n: i64, datatype: &DataType) -> Result<Self> {
-        // n cannot be 0
-        assert_or_internal_err!(
-            n != 0,
-            "Nth value indices are 1 based. 0 is invalid index"
-        );
         Ok(Self {
             n,
             values: VecDeque::new(),
@@ -344,11 +347,6 @@ impl NthValueAccumulator {
         ordering_dtypes: &[DataType],
         ordering_req: LexOrdering,
     ) -> Result<Self> {
-        // n cannot be 0
-        assert_or_internal_err!(
-            n != 0,
-            "Nth value indices are 1 based. 0 is invalid index"
-        );
         let mut datatypes = vec![datatype.clone()];
         datatypes.extend(ordering_dtypes.iter().cloned());
         Ok(Self {
