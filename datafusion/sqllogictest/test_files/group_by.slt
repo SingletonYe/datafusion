@@ -1970,6 +1970,26 @@ SELECT COUNT(*) AS c FROM tab3 GROUP BY ALL
 ----
 5
 
+# GROUP BY () is the empty grouping set: it groups on nothing, so the aggregate covers the whole
+# table. The query is still an aggregation, which is what makes it one row here.
+query I
+SELECT COUNT(*) AS c FROM tab3 GROUP BY ()
+----
+5
+
+# An empty grouping set beside a real one groups on the real one: `(col0)` x `()` is `(col0)`.
+query II
+SELECT col0, COUNT(*) AS c FROM tab3 GROUP BY (), col0 ORDER BY col0
+----
+0 4
+1 1
+
+# Over an empty input the grand total is still one row, holding 0.
+query I
+SELECT COUNT(*) AS c FROM tab3 WHERE col0 > 9 GROUP BY ()
+----
+0
+
 # query below should work in multi partition, successfully.
 query II
 SELECT l.col0, LAST_VALUE(r.col1 ORDER BY r.col0) as last_col1

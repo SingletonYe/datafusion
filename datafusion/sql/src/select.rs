@@ -262,10 +262,20 @@ impl<S: ContextProvider> SqlToRel<'_, S> {
             .transpose()?
             .flatten();
 
+        // `GROUP BY ()` is the empty grouping set: it contributes no grouping columns, but the query
+        // still aggregates, so `SELECT 1 FROM t GROUP BY ()` is one row where the same query without
+        // `GROUP BY` is one row per input row. The empty tuple is therefore dropped here instead of
+        // being planned, because planning it as an expression reports "Empty tuple not supported".
+        let mut empty_grouping_set = false;
         // All of the group by expressions
         let group_by_exprs = if let GroupByExpr::Expressions(exprs, _) = select.group_by {
             exprs
                 .into_iter()
+                .filter(|e| {
+                    let empty = matches!(e, SQLExpr::Tuple(items) if items.is_empty());
+                    empty_grouping_set |= empty;
+                    !empty
+                })
                 .map(|e| {
                     // Aliases from the projection can conflict with same-named expressions in the input
                     let mut alias_map = alias_map.clone();
@@ -403,7 +413,8 @@ impl<S: ContextProvider> SqlToRel<'_, S> {
             qualify_expr: qualify_expr_post_aggr,
             order_by_exprs: mut order_by_rex,
             on_exprs: mut on_exprs_post_aggr,
-        } = if !group_by_exprs.is_empty() || !aggr_exprs.is_empty() {
+        } = if !group_by_exprs.is_empty() || !aggr_exprs.is_empty() || empty_grouping_set
+        {
             self.aggregate(
                 &base_plan,
                 &select_exprs,
